@@ -175,7 +175,7 @@ tool.Activated:Connect(function()
             else
                 print("♻️ Seleção limpa.")
                 veiculoSelecionado = nil
-                tool.Name = "🎯 SELECT BOBSLED"
+                tool.Name = "SELECT MATTER"
                 if conexaoAtaque then conexaoAtaque:Disconnect() end
             end
         end
@@ -185,5 +185,5 @@ end)
 tool.Unequipped:Connect(function()
     if conexaoAtaque then conexaoAtaque:Disconnect() end
     veiculoSelecionado = nil
-    tool.Name = "🎯 SELECT BOBSLED"
+    tool.Name = "SELECT MATTER"
 end)
