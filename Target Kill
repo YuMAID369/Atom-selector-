@@ -28,7 +28,7 @@ end
 
 -- --- CRIAÇÃO DA TOOL ---
 local tool = Instance.new("Tool")
-tool.Name = "🎯SELECT BOBSLED"
+tool.Name = "SELECT MATTER"
 tool.RequiresHandle = false
 tool.Parent = lp:WaitForChild("Backpack")
 
