@@ -1,0 +1,189 @@
+-- [[ PROJETO KILL BOBSLED - MANUAL SELECTION (FORCE INJECTED) ]] --
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local lp = Players.LocalPlayer
+local character = lp.Character or lp.CharacterAdded:Wait()
+local camera = Workspace.CurrentCamera
+local mouse = lp:GetMouse()
+
+-- --- VARIÁVEIS DE ESTADO ---
+local veiculoSelecionado = nil
+local conexaoAtaque = nil
+
+-- --- TRANCAR AUTORIDADE DE REDE (SIMULATION RADIUS MÁXIMO) ---
+local sethp = sethiddenproperty or set_hidden_property
+if sethp then
+    task.spawn(function()
+        RunService.RenderStepped:Connect(function()
+            pcall(function()
+                -- Expande o raio de simulação para o limite absoluto para controlar o veículo de longe
+                sethp(lp, "SimulationRadius", 1e30)
+                sethp(lp, "MaxSimulationRadius", 1e30)
+            end)
+        end)
+    end)
+end
+
+-- --- CRIAÇÃO DA TOOL ---
+local tool = Instance.new("Tool")
+tool.Name = "🎯SELECT BOBSLED"
+tool.RequiresHandle = false
+tool.Parent = lp:WaitForChild("Backpack")
+
+-- --- INJEÇÃO DOS MOTORES DE FORÇA BRUTA (MÉTODO FLING BALL) ---
+local function aplicarMotoresFling(corpo)
+    -- Limpa forças e travas antigas para evitar conflitos
+    for _, child in pairs(corpo:GetChildren()) do
+        if child:IsA("BodyVelocity") or child:IsA("BodyAngularVelocity") or child.Name == "BobsledSpinMotor" then
+            child:Destroy()
+        end
+    end
+
+    corpo.CanCollide = true
+    corpo.Massless = false -- Precisa de massa real para empurrar a física do player alvo
+    
+    -- Propriedades físicas customizadas para aumentar a fricção do impacto
+    corpo.CustomPhysicalProperties = PhysicalProperties.new(100, 100, 0, 100, 100)
+
+    -- Definição de força limite estourada da engine
+    local forcaMassiva = Vector3.new(math.huge * math.huge, math.huge * math.huge, math.huge * math.huge)
+
+    -- 1. MOTOR LINEAR (Empuxo constante para estourar o alvo)
+    local velocity = Instance.new("BodyVelocity")
+    velocity.Name = "FlingPowerLinear"
+    velocity.Velocity = Vector3.new(999999, 999999, 999999)
+    velocity.MaxForce = forcaMassiva
+    velocity.P = math.huge
+    velocity.Parent = corpo  
+
+    -- 2. MOTOR ANGULAR (O Giro Fling 666 Destrutivo)
+    local angularVelocity = Instance.new("BodyAngularVelocity")
+    angularVelocity.Name = "FlingPowerAngular"
+    angularVelocity.AngularVelocity = Vector3.new(999999, 999999, 999999)
+    angularVelocity.MaxTorque = forcaMassiva
+    angularVelocity.P = math.huge
+    angularVelocity.Parent = corpo
+end
+
+-- --- EXECUÇÃO DO ATAQUE ---
+local function iniciarAtaque(alvoPlayer)
+    local alvoChar = alvoPlayer.Character
+    if not alvoChar or not alvoChar:FindFirstChild("HumanoidRootPart") then return end
+    
+    local alvoHRP = alvoChar.HumanoidRootPart
+    local alvoHum = alvoChar.Humanoid
+    local meuHRP = character:FindFirstChild("HumanoidRootPart")
+    
+    if not meuHRP or not veiculoSelecionado then return end
+
+    print("⚔️ INJETANDO VELOCIDADES MASSIVAS EM: " .. alvoPlayer.Name)
+    aplicarMotoresFling(veiculoSelecionado)
+
+    -- Cria restrição local para você não se auto-arremessar
+    local nc = Instance.new("NoCollisionConstraint", veiculoSelecionado)
+    nc.Part0 = veiculoSelecionado
+    nc.Part1 = meuHRP
+
+    -- Forçar a propriedade de rede (Network Ownership) direto no cliente
+    if sethp then
+        pcall(function() sethp(veiculoSelecionado, "NetworkOwner", lp) end)
+    elseif veiculoSelecionado.SetNetworkOwner then
+        pcall(function() veiculoSelecionado:SetNetworkOwner(lp) end)
+    end
+
+    -- Varredura de partes alternadas para bugar a caixa de colisão do alvo (idêntico ao Fling Ball)
+    local partesAlvo = {"HumanoidRootPart", "Head", "LowerTorso"}
+    local index = 1
+
+    -- Loop por Heartbeat (Sincronizado com a simulação física do motor)
+    conexaoAtaque = RunService.Heartbeat:Connect(function()
+        if not veiculoSelecionado or not veiculoSelecionado.Parent or not alvoChar.Parent or alvoHum.Health <= 0 then
+            if conexaoAtaque then conexaoAtaque:Disconnect() end
+            print("💥 Alvo destruído com sucesso. Resetando.")
+            veiculoSelecionado = nil
+            tool.Name = "SELECT ATOM"
+            return
+        end
+        
+        -- Seleciona rotativamente a parte do alvo para atacar
+        local nomeParte = partesAlvo[index]
+        local p = alvoChar:FindFirstChild(nomeParte)
+
+        if p then
+            -- Ajuste de antecipação cirúrgica de movimento
+            local offsetCurto = Vector3.new(0, 0, 0)
+            if p.Velocity.Magnitude > 0.1 then
+                offsetCurto = p.Velocity.Unit * 0.8
+            end
+
+            -- Teletransporte de CFrame sob a zona de autoridade do Ultra SimulationRadius
+            veiculoSelecionado.CFrame = CFrame.new(p.Position + offsetCurto)
+
+            -- Alimentação de vetores em loop para garantir que o servidor replique o impacto
+            veiculoSelecionado.Velocity = Vector3.new(999999, 999999, 999999)
+            veiculoSelecionado.RotVelocity = Vector3.new(999999, 999999, 999999)
+        end
+
+        index = index + 1
+        if index > #partesAlvo then index = 1 end
+    end)
+end
+
+-- --- GATILHO DE CLIQUES DA TOOL ---
+tool.Activated:Connect(function()
+    local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character}
+
+    local raycastResult = Workspace:Raycast(unitRay.Origin, unitRay.Direction * 50000, raycastParams)
+
+    if raycastResult and raycastResult.Instance then
+        local hitPart = raycastResult.Instance
+        
+        -- ESTADO 1: Selecionar o Veículo
+        if not veiculoSelecionado then
+            local modeloVeiculo = hitPart:FindFirstAncestorOfClass("Model") or hitPart
+            
+            if hitPart.Anchored == false then
+                if hitPart:IsA("BasePart") then
+                    veiculoSelecionado = hitPart
+                elseif modeloVeiculo:IsA("Model") and modeloVeiculo.PrimaryPart then
+                    veiculoSelecionado = modeloVeiculo.PrimaryPart
+                else
+                    veiculoSelecionado = hitPart
+                end
+                
+                print("🚘 VEÍCULO CAPTURADO PRONTO PARA FLING: " .. veiculoSelecionado.Name)
+                tool.Name = " DESTROY!!"
+            else
+                warn("❌ Objeto travado/ancorado pelo servidor. Escolha outro.")
+            end
+            
+        -- ESTADO 2: Selecionar o Alvo
+        else
+            local model = hitPart:FindFirstAncestorOfClass("Model")
+            if model and model:FindFirstChild("Humanoid") then
+                local tPlayer = Players:GetPlayerFromCharacter(model)
+
+                if tPlayer and tPlayer ~= lp then
+                    if conexaoAtaque then conexaoAtaque:Disconnect() end
+                    iniciarAtaque(tPlayer)
+                end
+            else
+                print("♻️ Seleção limpa.")
+                veiculoSelecionado = nil
+                tool.Name = "🎯 SELECT BOBSLED"
+                if conexaoAtaque then conexaoAtaque:Disconnect() end
+            end
+        end
+    end
+end)
+
+tool.Unequipped:Connect(function()
+    if conexaoAtaque then conexaoAtaque:Disconnect() end
+    veiculoSelecionado = nil
+    tool.Name = "🎯 SELECT BOBSLED"
+end)
